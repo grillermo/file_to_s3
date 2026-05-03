@@ -1,6 +1,6 @@
 # file-to-s3
 
-Minimal Rack app that accepts a file upload and stores it in AWS S3.
+Minimal headless Rack app that accepts a file upload and stores it in AWS S3.
 
 ## Requirements
 
@@ -37,13 +37,34 @@ AWS_S3_PREFIX=uploads
 ## Run
 
 ```sh
-bundle exec rackup
+bin/rackup -s webrick
 ```
 
-Then open http://localhost:9292
+The service listens on http://localhost:33333
+
+The local `bin/rackup` wrapper defaults to port `33333`. You can still override it with `PORT=4567 bin/rackup -s webrick` or `bin/rackup -p 4567 -s webrick`.
+
+If `bin/rackup` is missing, regenerate the local Bundler binstub once:
+
+```sh
+bundle binstub rackup --force
+bin/rackup -s webrick
+```
 
 ## Notes
 
+- The app exposes only `POST /upload`.
 - Uploads larger than 25 MB are rejected by the app.
 - Object keys use a UUID prefix to avoid collisions.
 - The app builds `Aws::Credentials` directly from `AWS_CLIENT_ID` and `AWS_SECRET`.
+
+## API
+
+Send a `multipart/form-data` request with a `file` field:
+
+```sh
+curl -X POST http://localhost:33333/upload \
+  -F "file=@/path/to/file.txt"
+```
+
+On success, the response is `200 text/plain` with the uploaded object's S3 URL in the response body.

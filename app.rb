@@ -2,6 +2,7 @@ require "dotenv/load"
 require "aws-sdk-s3"
 require "rack"
 require "securerandom"
+require "uri"
 
 class FileToS3App
   MAX_FILE_SIZE = 25 * 1024 * 1024
@@ -10,8 +11,6 @@ class FileToS3App
     req = Rack::Request.new(env)
 
     case [req.request_method, req.path_info]
-    in ["GET", "/"]
-      ok(render_form)
     in ["POST", "/upload"]
       handle_upload(req)
     else
@@ -26,7 +25,7 @@ class FileToS3App
   def handle_upload(req)
     uploaded = req.params["file"]
 
-    return unprocessable("Choose a file before submitting.") unless uploaded.is_a?(Hash)
+    return unprocessable("Missing multipart file field 'file'.") unless uploaded.is_a?(Hash)
 
     tempfile = uploaded[:tempfile]
     filename = sanitize_filename(uploaded[:filename])
@@ -48,7 +47,7 @@ class FileToS3App
       content_type: content_type.empty? ? "application/octet-stream" : content_type
     )
 
-    ok(render_success(bucket:, key:, filename:))
+    text_response(200, s3_object_url(bucket:, key:))
   end
 
   def s3_client
@@ -72,139 +71,25 @@ class FileToS3App
     File.basename(filename).gsub(/[^\w.\-]/, "_")
   end
 
-  def ok(body)
-    html_response(200, body)
+  def text_response(status, body)
+    [status, { "content-type" => "text/plain; charset=utf-8" }, [body]]
   end
 
   def unprocessable(message)
-    html_response(422, render_form(error_message: message))
+    text_response(422, message)
   end
 
   def not_found
-    html_response(404, page_template("Not found", "<p>The page you requested does not exist.</p>"))
+    text_response(404, "Not found")
   end
 
   def error_page(error)
     warn "[file-to-s3] #{error.class}: #{error.message}"
-    html_response(500, page_template("Upload failed", "<p>#{h(error.message)}</p>"))
+    text_response(500, error.message)
   end
 
-  def html_response(status, body)
-    [status, { "content-type" => "text/html; charset=utf-8" }, [body]]
-  end
-
-  def render_form(error_message: nil)
-    error_block = error_message ? %(<p class="error">#{h(error_message)}</p>) : ""
-
-    page_template("Upload a file to S3", <<~HTML)
-      #{error_block}
-      <form action="/upload" method="post" enctype="multipart/form-data">
-        <label for="file">Choose a file</label>
-        <input id="file" name="file" type="file" required>
-        <button type="submit">Upload</button>
-      </form>
-    HTML
-  end
-
-  def render_success(bucket:, key:, filename:)
-    page_template("Upload complete", <<~HTML)
-      <p><strong>#{h(filename)}</strong> was uploaded successfully.</p>
-      <dl>
-        <dt>Bucket</dt>
-        <dd>#{h(bucket)}</dd>
-        <dt>Object key</dt>
-        <dd><code>#{h(key)}</code></dd>
-      </dl>
-      <p><a href="/">Upload another file</a></p>
-    HTML
-  end
-
-  def page_template(title, body)
-    <<~HTML
-      <!doctype html>
-      <html lang="en">
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <title>#{h(title)}</title>
-          <style>
-            :root {
-              color-scheme: light;
-              font-family: "Iowan Old Style", "Palatino Linotype", serif;
-              background: linear-gradient(135deg, #f2efe8, #dfe9f3);
-              color: #1d2433;
-            }
-
-            body {
-              margin: 0;
-              min-height: 100vh;
-              display: grid;
-              place-items: center;
-              padding: 2rem;
-            }
-
-            main {
-              width: min(100%, 34rem);
-              background: rgba(255, 255, 255, 0.88);
-              border: 1px solid rgba(29, 36, 51, 0.14);
-              border-radius: 1rem;
-              box-shadow: 0 24px 60px rgba(29, 36, 51, 0.14);
-              padding: 2rem;
-              backdrop-filter: blur(12px);
-            }
-
-            h1 {
-              margin-top: 0;
-            }
-
-            form, dl {
-              display: grid;
-              gap: 1rem;
-            }
-
-            input, button {
-              font: inherit;
-            }
-
-            button {
-              justify-self: start;
-              border: 0;
-              border-radius: 999px;
-              background: #1d5b79;
-              color: white;
-              padding: 0.75rem 1.2rem;
-              cursor: pointer;
-            }
-
-            .error {
-              color: #9f1d35;
-              font-weight: 700;
-            }
-
-            code {
-              word-break: break-all;
-            }
-
-            dt {
-              font-weight: 700;
-            }
-
-            dd {
-              margin: 0;
-            }
-          </style>
-        </head>
-        <body>
-          <main>
-            <h1>#{h(title)}</h1>
-            #{body}
-          </main>
-        </body>
-      </html>
-    HTML
-  end
-
-  def h(value)
-    Rack::Utils.escape_html(value.to_s)
+  def s3_object_url(bucket:, key:)
+    encoded_key = key.split("/").map { |segment| URI::DEFAULT_PARSER.escape(segment) }.join("/")
+    "https://#{bucket}.s3.#{ENV.fetch("AWS_REGION")}.amazonaws.com/#{encoded_key}"
   end
 end
