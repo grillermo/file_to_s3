@@ -5,14 +5,14 @@ require "securerandom"
 require "uri"
 
 class FileToS3App
-  MAX_FILE_SIZE = 25 * 1024 * 1024
-
   def call(env)
     req = Rack::Request.new(env)
 
     case [req.request_method, req.path_info]
     in ["POST", "/upload"]
       handle_upload(req)
+    in ["GET", "/"]
+      serve_index
     else
       not_found
     end
@@ -34,7 +34,6 @@ class FileToS3App
 
     size = tempfile.size
     return unprocessable("The file is empty.") if size.zero?
-    return unprocessable("Files larger than #{MAX_FILE_SIZE / (1024 * 1024)} MB are not allowed.") if size > MAX_FILE_SIZE
 
     key = build_object_key(filename)
     content_type = uploaded[:type].to_s
@@ -47,7 +46,9 @@ class FileToS3App
       content_type: content_type.empty? ? "application/octet-stream" : content_type
     )
 
-    text_response(200, s3_object_url(bucket:, key:))
+    url = s3_object_url(bucket:, key:)
+    update_index_html(url)
+    text_response(200, url)
   end
 
   def s3_client
@@ -86,6 +87,29 @@ class FileToS3App
   def error_page(error)
     warn "[file-to-s3] #{error.class}: #{error.message}"
     text_response(500, error.message)
+  end
+
+  def index_html_path
+    File.join(__dir__, "public", "index.html")
+  end
+
+  def update_index_html(url)
+    File.write(index_html_path, <<~HTML)
+      <!DOCTYPE html>
+      <html>
+      <head><title>Downloading...</title></head>
+      <body>
+      <script>window.location.href = #{url.to_json};</script>
+      <p>Downloading... <a href=#{url.to_json}>click here if it doesn't start</a></p>
+      </body>
+      </html>
+    HTML
+  end
+
+  def serve_index
+    path = index_html_path
+    html = File.exist?(path) ? File.read(path) : "<html><body><p>No file uploaded yet.</p></body></html>"
+    [200, { "content-type" => "text/html; charset=utf-8" }, [html]]
   end
 
   def s3_object_url(bucket:, key:)
