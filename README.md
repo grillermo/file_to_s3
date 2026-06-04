@@ -53,7 +53,7 @@ bin/rackup -s webrick
 
 ## Notes
 
-- The app exposes only `POST /upload`.
+- The app exposes `POST /upload` and `POST /receive`.
 - Uploads larger than 25 MB are rejected by the app.
 - Object keys use a UUID prefix to avoid collisions.
 - The app builds `Aws::Credentials` directly from `AWS_CLIENT_ID` and `AWS_SECRET`.
@@ -68,3 +68,12 @@ curl -X POST http://localhost:33333/upload \
 ```
 
 On success, the response is `200 text/plain` with the uploaded object's S3 URL in the response body.
+
+To store the file locally under `files/` without uploading it to S3:
+
+```sh
+curl -X POST http://localhost:33333/receive \
+  -F "file=@/path/to/file.txt"
+```
+
+On success, the response is `200 text/plain` after the local file has been written.

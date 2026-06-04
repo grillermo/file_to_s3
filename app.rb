@@ -1,5 +1,6 @@
 require "dotenv/load"
 require "aws-sdk-s3"
+require "fileutils"
 require "rack"
 require "securerandom"
 require "uri"
@@ -11,6 +12,8 @@ class FileToS3App
     case [req.request_method, req.path_info]
     in ["POST", "/upload"]
       handle_upload(req)
+    in ["POST", "/receive"]
+      handle_receive(req)
     in ["GET", "/"]
       serve_index
     else
@@ -23,6 +26,41 @@ class FileToS3App
   private
 
   def handle_upload(req)
+    uploaded = extract_uploaded_file(req)
+    return uploaded unless uploaded.is_a?(Hash)
+
+    key = build_object_key(uploaded[:filename])
+    content_type = uploaded[:content_type].to_s
+    bucket = ENV.fetch("AWS_S3_BUCKET")
+
+    s3_client.put_object(
+      bucket: bucket,
+      key: key,
+      body: uploaded[:tempfile],
+      content_type: content_type.empty? ? "application/octet-stream" : content_type
+    )
+
+    url = s3_object_url(bucket:, key:)
+    update_index_html(url)
+    text_response(200, url)
+  end
+
+  def handle_receive(req)
+    uploaded = extract_uploaded_file(req)
+    return uploaded unless uploaded.is_a?(Hash)
+
+    path = File.join(files_dir, build_local_filename(uploaded[:filename]))
+    FileUtils.mkdir_p(files_dir)
+
+    uploaded[:tempfile].rewind
+    File.open(path, "wb") do |file|
+      IO.copy_stream(uploaded[:tempfile], file)
+    end
+
+    text_response(200, path)
+  end
+
+  def extract_uploaded_file(req)
     uploaded = req.params["file"]
 
     return unprocessable("Missing multipart file field 'file'.") unless uploaded.is_a?(Hash)
@@ -35,20 +73,11 @@ class FileToS3App
     size = tempfile.size
     return unprocessable("The file is empty.") if size.zero?
 
-    key = build_object_key(filename)
-    content_type = uploaded[:type].to_s
-    bucket = ENV.fetch("AWS_S3_BUCKET")
-
-    s3_client.put_object(
-      bucket: bucket,
-      key: key,
-      body: tempfile,
-      content_type: content_type.empty? ? "application/octet-stream" : content_type
-    )
-
-    url = s3_object_url(bucket:, key:)
-    update_index_html(url)
-    text_response(200, url)
+    {
+      tempfile: tempfile,
+      filename: filename,
+      content_type: uploaded[:type]
+    }
   end
 
   def s3_client
@@ -66,10 +95,18 @@ class FileToS3App
     [prefix, "#{SecureRandom.uuid}-#{filename}"].reject(&:empty?).join("/")
   end
 
+  def build_local_filename(filename)
+    "#{SecureRandom.uuid}-#{filename}"
+  end
+
   def sanitize_filename(filename)
     return nil if filename.to_s.strip.empty?
 
     File.basename(filename).gsub(/[^\w.\-]/, "_")
+  end
+
+  def files_dir
+    File.join(__dir__, "files")
   end
 
   def text_response(status, body)
