@@ -23,6 +23,7 @@ The app loads `.env` automatically on boot. Set these variables in `.env` or exp
 - `AWS_CLIENT_ID` for the AWS access key ID used by the app
 - `AWS_SECRET` for the AWS secret access key used by the app
 - `AWS_S3_PREFIX` optional, defaults to `uploads`
+- `AUTH_TOKEN` bearer token required for upload requests
 
 Example:
 
@@ -32,6 +33,7 @@ AWS_S3_BUCKET=my-upload-bucket
 AWS_CLIENT_ID=AKIA...
 AWS_SECRET=super-secret-value
 AWS_S3_PREFIX=uploads
+AUTH_TOKEN=replace-with-a-long-random-token
 ```
 
 ## Run
@@ -64,6 +66,7 @@ Send a `multipart/form-data` request with a `file` field:
 
 ```sh
 curl -X POST http://localhost:33333/upload \
+  -H "Authorization: Bearer $AUTH_TOKEN" \
   -F "file=@/path/to/file.txt"
 ```
 
@@ -73,6 +76,7 @@ To store the file locally under `files/` without uploading it to S3:
 
 ```sh
 curl -X POST http://localhost:33333/receive \
+  -H "Authorization: Bearer $AUTH_TOKEN" \
   -F "file=@/path/to/file.txt"
 ```
 

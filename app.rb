@@ -11,8 +11,12 @@ class FileToS3App
 
     case [req.request_method, req.path_info]
     in ["POST", "/upload"]
+      return unauthorized unless authenticated?(req)
+
       handle_upload(req)
     in ["POST", "/receive"]
+      return unauthorized unless authenticated?(req)
+
       handle_receive(req)
     in ["GET", "/"]
       serve_index
@@ -24,6 +28,14 @@ class FileToS3App
   end
 
   private
+
+  def authenticated?(req)
+    bearer_token(req) == ENV.fetch("AUTH_TOKEN")
+  end
+
+  def bearer_token(req)
+    req.get_header("HTTP_AUTHORIZATION").to_s[/\ABearer\s+(.+)\z/, 1]
+  end
 
   def handle_upload(req)
     uploaded = extract_uploaded_file(req)
@@ -115,6 +127,17 @@ class FileToS3App
 
   def unprocessable(message)
     text_response(422, message)
+  end
+
+  def unauthorized
+    [
+      401,
+      {
+        "content-type" => "text/plain; charset=utf-8",
+        "www-authenticate" => %(Bearer realm="file-to-s3")
+      },
+      ["Unauthorized"]
+    ]
   end
 
   def not_found
