@@ -1,1 +1,3 @@
-bundle exec rackup -p 33333
+#!/bin/sh
+
+RACK_ENV="${RACK_ENV:-deployment}" exec bundle exec rackup -p 33333

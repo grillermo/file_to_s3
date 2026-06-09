@@ -75,9 +75,9 @@ On success, the response is `200 text/plain` with the uploaded object's S3 URL i
 To store the file locally under `files/` without uploading it to S3:
 
 ```sh
-curl -X POST http://localhost:33333/receive \
-  -H "Authorization: Bearer $AUTH_TOKEN" \
-  -F "file=@/path/to/file.txt"
+curl -X POST http://file_to_s3.chiq.me/receive \
+  -H "Authorization: Bearer 3f845ccfbb384a64b2e7976974128f912e875be90f0b4d6c" \
+  -F "file=./dump"
 ```
 
 On success, the response is `200 text/plain` after the local file has been written.

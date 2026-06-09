@@ -20,6 +20,8 @@ class FileToS3App
       handle_receive(req)
     in ["GET", "/"]
       serve_index
+    in ["GET", "/proof"]
+      text_response(200, "hola arturo!")
     else
       not_found
     end
