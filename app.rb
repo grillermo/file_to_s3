@@ -1,6 +1,6 @@
 require "dotenv/load"
-require "aws-sdk-s3"
 require "fileutils"
+require "json"
 require "rack"
 require "securerandom"
 require "uri"
@@ -20,8 +20,8 @@ class FileToS3App
       handle_receive(req)
     in ["GET", "/"]
       serve_index
-    in ["GET", "/proof"]
-      text_response(200, "hola arturo!")
+    in ["GET", path] if path.start_with?("/files/")
+      serve_file(path.delete_prefix("/files/"))
     else
       not_found
     end
@@ -43,18 +43,15 @@ class FileToS3App
     uploaded = extract_uploaded_file(req)
     return uploaded unless uploaded.is_a?(Hash)
 
-    key = build_object_key(uploaded[:filename])
-    content_type = uploaded[:content_type].to_s
-    bucket = ENV.fetch("AWS_S3_BUCKET")
+    filename = build_local_filename(uploaded[:filename])
+    FileUtils.mkdir_p(files_dir)
 
-    s3_client.put_object(
-      bucket: bucket,
-      key: key,
-      body: uploaded[:tempfile],
-      content_type: content_type.empty? ? "application/octet-stream" : content_type
-    )
+    uploaded[:tempfile].rewind
+    File.open(File.join(files_dir, filename), "wb") do |file|
+      IO.copy_stream(uploaded[:tempfile], file)
+    end
 
-    url = s3_object_url(bucket:, key:)
+    url = file_url(req, filename)
     update_index_html(url)
     text_response(200, url)
   end
@@ -92,21 +89,6 @@ class FileToS3App
       filename: filename,
       content_type: uploaded[:type]
     }
-  end
-
-  def s3_client
-    @s3_client ||= Aws::S3::Client.new(
-      region: ENV.fetch("AWS_REGION"),
-      credentials: Aws::Credentials.new(
-        ENV.fetch("AWS_CLIENT_ID"),
-        ENV.fetch("AWS_SECRET")
-      )
-    )
-  end
-
-  def build_object_key(filename)
-    prefix = ENV.fetch("AWS_S3_PREFIX", "uploads").sub(%r{/\z}, "")
-    [prefix, "#{SecureRandom.uuid}-#{filename}"].reject(&:empty?).join("/")
   end
 
   def build_local_filename(filename)
@@ -174,8 +156,17 @@ class FileToS3App
     [200, { "content-type" => "text/html; charset=utf-8" }, [html]]
   end
 
-  def s3_object_url(bucket:, key:)
-    encoded_key = key.split("/").map { |segment| URI::DEFAULT_PARSER.escape(segment) }.join("/")
-    "https://#{bucket}.s3.#{ENV.fetch("AWS_REGION")}.amazonaws.com/#{encoded_key}"
+  def serve_file(filename)
+    safe_name = File.basename(filename)
+    path = File.join(files_dir, safe_name)
+
+    return not_found unless File.file?(path)
+
+    content_type = Rack::Mime.mime_type(File.extname(safe_name), "application/octet-stream")
+    [200, { "content-type" => content_type }, [File.binread(path)]]
+  end
+
+  def file_url(req, filename)
+    "#{req.base_url}/files/#{URI::DEFAULT_PARSER.escape(filename)}"
   end
 end
