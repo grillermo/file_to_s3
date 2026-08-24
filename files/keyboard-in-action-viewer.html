@@ -76,7 +76,7 @@
       const shortcut = modifiers.command || modifiers.control;
       document.querySelectorAll("[data-code]").forEach((item) => {
         const value = map[item.dataset.code][layer];
-        item.textContent = shortcut ? `${modifiers.command ? "⌘" : "⌃"}${modifiers.shift ? "⇧" : ""} ${value}` : value;
+        item.textContent = shortcut ? `${modifiers.control ? "⌃" : ""}${modifiers.command ? "⌘" : ""}${modifiers.shift ? "⇧" : ""} ${value}` : value;
       });
       buttons.forEach((button) => button.setAttribute("aria-pressed", String(modifiers[button.dataset.modifier.replace("-", "").replace("altlock", "altLock")] )));
       document.querySelector("#symbols").innerHTML = Object.entries(map).filter(([code]) => !/[a-z0-9]/.test(code)).map(([code, values]) => `<tr><td>${escapeHtml(code)}</td>${values.map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("");
