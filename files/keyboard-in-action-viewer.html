@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keyboard in Action</title>
+  <style>
+    :root { color-scheme: dark; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #111827; color: #f8fafc; }
+    body { margin: 0 auto; max-width: 760px; padding: 20px 14px 32px; }
+    h1 { font-size: 1.5rem; margin: 0 0 8px; } p, small { color: #cbd5e1; line-height: 1.45; }
+    .modifiers { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 10px; }
+    button { border: 1px solid #64748b; border-radius: 8px; background: #1e293b; color: inherit; font: inherit; min-height: 44px; padding: 8px 11px; }
+    button[aria-pressed="true"] { background: #0ea5e9; border-color: #7dd3fc; color: #082f49; font-weight: 700; }
+    #reset { margin: 0 0 18px; }
+    #keyboard { display: grid; gap: 6px; overflow-x: auto; padding-bottom: 6px; }
+    .row { display: flex; gap: 6px; min-width: 620px; }
+    .key { align-items: center; background: #1e293b; border: 1px solid #475569; border-radius: 6px; display: flex; flex: 1; justify-content: center; min-height: 48px; padding: 3px; text-align: center; }
+    .wide { flex: 1.5; } .space { flex: 5; }
+    #live-key { background: #0f172a; border: 1px solid #334155; border-radius: 8px; display: block; margin: 18px 0; min-height: 1.5em; padding: 12px; }
+    table { border-collapse: collapse; font-size: .82rem; width: 100%; } th, td { border: 1px solid #334155; padding: 5px; text-align: center; }
+    @media (max-width: 430px) { body { padding: 16px 10px; } .key { min-height: 44px; } }
+  </style>
+</head>
+<body>
+  <h1>Keyboard in Action</h1>
+  <p>US English reference for a typical external US-QWERTY keyboard. iOS, browsers, apps, and keyboard layouts may reserve shortcuts or produce different glyphs.</p>
+
+  <div class="modifiers" aria-label="Modifier controls">
+    <button data-modifier="control" aria-pressed="false">⌃ Control</button>
+    <button data-modifier="option" aria-pressed="false">⌥ Option</button>
+    <button data-modifier="command" aria-pressed="false">⌘ Command</button>
+    <button data-modifier="shift" aria-pressed="false">⇧ Shift</button>
+    <button data-modifier="alt-lock" aria-pressed="false">⌥⇪ Alt Lock</button>
+  </div>
+  <button id="reset" type="button">Reset modifiers</button>
+
+  <section id="keyboard" aria-label="US QWERTY keyboard"></section>
+  <output id="live-key">Press a key to compare your keyboard.</output>
+
+  <h2>Programmer symbols</h2>
+  <table aria-label="US programmer punctuation reference"><thead><tr><th>Key</th><th>Plain</th><th>Shift</th><th>Option</th><th>Shift+Option</th></tr></thead><tbody id="symbols"></tbody></table>
+  <p><small>Real external-keyboard events are shown above only when this page receives them; intercepted iOS system shortcuts are not reported as seen.</small></p>
+
+  <script>
+    const modifiers = { control: false, option: false, command: false, shift: false, altLock: false };
+    const rows = ["1234567890-=", "qwertyuiop[]\\", "asdfghjkl;'", "zxcvbnm,./"];
+    const map = {};
+    const optionLetters = { a: ["å", "Å"], b: ["∫", "ı"], c: ["ç", "Ç"], d: ["∂", "Î"], e: ["´", "‰"], f: ["ƒ", "Ï"], g: ["©", "˝"], h: ["˙", "Ó"], i: ["ˆ", "ˆ"], j: ["∆", "Ô"], k: ["˚", ""], l: ["¬", "Ò"], m: ["µ", "Â"], n: ["˜", "˜"], o: ["ø", "Ø"], p: ["π", "∏"], q: ["œ", "Œ"], r: ["®", "‰"], s: ["ß", "Í"], t: ["†", "ˇ"], u: ["¨", "¨"], v: ["√", "◊"], w: ["∑", "„"], x: ["≈", "⁄"], y: ["¥", "Á"], z: ["Ω", "¸"] };
+    "abcdefghijklmnopqrstuvwxyz".split("").forEach((key) => map[key] = [key, key.toUpperCase(), ...optionLetters[key]]);
+    Object.assign(map, {
+      "1": ["1", "!", "¡", "⁄"], "2": ["2", "@", "™", "€"], "3": ["3", "#", "£", "‹"], "4": ["4", "$", "¢", "›"], "5": ["5", "%", "∞", "ﬁ"],
+      "6": ["6", "^", "§", "ﬂ"], "7": ["7", "&", "¶", "‡"], "8": ["8", "*", "•", "°"], "9": ["9", "(", "ª", "·"], "0": ["0", ")", "º", "‚"],
+      "-": ["-", "_", "–", "—"], "=": ["=", "+", "≠", "±"], "[": ["[", "{", "“", "”"], "]": ["]", "}", "‘", "’"], "\\": ["\\", "|", "«", "»"],
+      ";": [";", ":", "…", "Ú"], "'": ["'", "\"", "æ", "Æ"], ",": [",", "<", "≤", "¯"], ".": [".", ">", "≥", "˘"], "/": ["/", "?", "÷", "¿"]
+    });
+    const keyboard = document.querySelector("#keyboard");
+    const liveKey = document.querySelector("#live-key");
+    const buttons = [...document.querySelectorAll("[data-modifier]")];
+
+    rows.forEach((row, index) => {
+      const line = document.createElement("div"); line.className = "row";
+      if (index === 1) line.append(key("Tab", "wide"));
+      if (index === 2) line.append(key("Caps", "wide"));
+      if (index === 3) line.append(key("Shift", "wide"));
+      row.split("").forEach((code) => { const item = key(code); item.dataset.code = code; line.append(item); });
+      line.append(key(index === 0 ? "Delete" : index === 3 ? "Shift" : "Return", "wide"));
+      keyboard.append(line);
+    });
+    const bottom = document.createElement("div"); bottom.className = "row";
+    bottom.append(key("⌃", "wide"), key("⌥", "wide"), key("⌘", "wide"), key("Space", "space"), key("⌘", "wide")); keyboard.append(bottom);
+
+    function key(label, className = "") { const item = document.createElement("div"); item.className = `key ${className}`; item.textContent = label; return item; }
+    function render() {
+      const option = modifiers.option || modifiers.altLock;
+      const layer = (modifiers.shift ? 1 : 0) + (option ? 2 : 0);
+      const shortcut = modifiers.command || modifiers.control;
+      document.querySelectorAll("[data-code]").forEach((item) => {
+        const value = map[item.dataset.code][layer];
+        item.textContent = shortcut ? `${modifiers.command ? "⌘" : "⌃"}${modifiers.shift ? "⇧" : ""} ${value}` : value;
+      });
+      buttons.forEach((button) => button.setAttribute("aria-pressed", String(modifiers[button.dataset.modifier.replace("-", "").replace("altlock", "altLock")] )));
+      document.querySelector("#symbols").innerHTML = Object.entries(map).filter(([code]) => !/[a-z0-9]/.test(code)).map(([code, values]) => `<tr><td>${escapeHtml(code)}</td>${values.map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("");
+      liveKey.textContent = shortcut ? "Control and Command combinations are shortcut behavior, not guaranteed text output on iOS." : `US English printable layer: ${option ? "Option" : "plain"}${modifiers.shift ? " + Shift" : ""}.`;
+    }
+    function escapeHtml(value) { return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;"); }
+    buttons.forEach((button) => button.addEventListener("click", () => { const name = button.dataset.modifier === "alt-lock" ? "altLock" : button.dataset.modifier; modifiers[name] = !modifiers[name]; render(); }));
+    document.querySelector("#reset").addEventListener("click", () => { Object.keys(modifiers).forEach((name) => modifiers[name] = false); render(); });
+    document.addEventListener("keydown", (event) => { liveKey.textContent = `Received key: ${event.key} — Control ${event.ctrlKey ? "on" : "off"}, Option ${event.altKey ? "on" : "off"}, Command ${event.metaKey ? "on" : "off"}, Shift ${event.shiftKey ? "on" : "off"}.`; });
+    render();
+  </script>
+</body>
+</html>
