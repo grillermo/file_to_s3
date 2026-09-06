@@ -19,9 +19,9 @@ class FileToS3App
 
       handle_receive(req)
     in ["GET", "/"]
-      serve_index
-    in ["GET", path] if path.start_with?("/files/")
-      serve_file(path.delete_prefix("/files/"))
+      serve_index(req)
+    in ["GET" | "HEAD", path] if path.start_with?("/files/")
+      serve_file(path.delete_prefix("/files/"), head: req.request_method == "HEAD")
     else
       not_found
     end
@@ -51,9 +51,7 @@ class FileToS3App
       IO.copy_stream(uploaded[:tempfile], file)
     end
 
-    url = file_url(req, filename)
-    update_index_html(url)
-    text_response(200, url)
+    text_response(200, file_url(req, filename))
   end
 
   def handle_receive(req)
@@ -101,8 +99,10 @@ class FileToS3App
     File.basename(filename).gsub(/[^\w.\-]/, "_")
   end
 
+  # Overridable so tests can point at a scratch directory instead of the
+  # repo's real files/.
   def files_dir
-    File.join(__dir__, "files")
+    ENV.fetch("FILES_DIR") { File.join(__dir__, "files") }
   end
 
   def text_response(status, body)
@@ -133,12 +133,20 @@ class FileToS3App
     text_response(500, error.message)
   end
 
-  def index_html_path
-    File.join(__dir__, "public", "index.html")
+  def latest_filename
+    Dir.children(files_dir)
+      .map { |name| File.join(files_dir, name) }
+      .select { |path| File.file?(path) }
+      .max_by { |path| File.mtime(path) }
+      &.then { |path| File.basename(path) }
   end
 
-  def update_index_html(url)
-    File.write(index_html_path, <<~HTML)
+  def serve_index(req)
+    filename = File.directory?(files_dir) ? latest_filename : nil
+    return [200, { "content-type" => "text/html; charset=utf-8" }, ["<html><body><p>No file uploaded yet.</p></body></html>"]] unless filename
+
+    url = file_url(req, filename)
+    html = <<~HTML
       <!DOCTYPE html>
       <html>
       <head><title>Downloading...</title></head>
@@ -148,22 +156,27 @@ class FileToS3App
       </body>
       </html>
     HTML
-  end
-
-  def serve_index
-    path = index_html_path
-    html = File.exist?(path) ? File.read(path) : "<html><body><p>No file uploaded yet.</p></body></html>"
     [200, { "content-type" => "text/html; charset=utf-8" }, [html]]
   end
 
-  def serve_file(filename)
+  # iOS's install daemon issues HEAD (and Range) for the OTA manifest and the
+  # .ipa before it downloads either, so HEAD must answer with the same status
+  # and headers as GET — just without the body.
+  def serve_file(filename, head: false)
     safe_name = File.basename(filename)
     path = File.join(files_dir, safe_name)
 
     return not_found unless File.file?(path)
 
     content_type = Rack::Mime.mime_type(File.extname(safe_name), "application/octet-stream")
-    [200, { "content-type" => content_type }, [File.binread(path)]]
+    headers = {
+      "content-type" => content_type,
+      "content-length" => File.size(path).to_s
+    }
+
+    return [200, headers, []] if head
+
+    [200, headers, [File.binread(path)]]
   end
 
   def file_url(req, filename)
