@@ -68,3 +68,17 @@ curl -X POST http://file_to_s3.chiq.me/receive \
 ```
 
 On success, the response is `200 text/plain` after the local file has been written.
+
+To store the file under a stable name that overwrites any previous upload —
+so the URL never changes — pass `?name=`:
+
+```sh
+curl -X POST "https://files.chiq.me/upload?name=awh-manifest.plist" \
+  -H "Authorization: Bearer $AUTH_TOKEN" \
+  -F "file=@ios/manifest.plist"
+```
+
+The response is always `https://files.chiq.me/files/awh-manifest.plist`, and
+pinned responses carry `cache-control: no-cache` so caches in front of the
+service revalidate instead of serving a stale copy. Without `?name=`, uploads
+keep their UUID prefix and never overwrite anything.

@@ -93,4 +93,65 @@ class AppTest < Minitest::Test
 
     assert_equal 404, status
   end
+
+  # --- pinned uploads ---------------------------------------------------
+
+  def test_pinned_upload_uses_the_exact_name
+    src = write_temp("m.plist", "<plist/>")
+
+    status, _, body = upload(src, "ignored.plist", query: "?name=awh-manifest.plist")
+
+    assert_equal 200, status
+    assert_equal "http://files.example/files/awh-manifest.plist", body.join
+    assert_path_exists File.join(@dir, "awh-manifest.plist")
+  end
+
+  def test_pinned_upload_overwrites_in_place
+    first = write_temp("v1.plist", "one")
+    second = write_temp("v2.plist", "two")
+
+    _, _, first_body = upload(first, "x", query: "?name=awh-manifest.plist")
+    _, _, second_body = upload(second, "x", query: "?name=awh-manifest.plist")
+
+    assert_equal first_body.join, second_body.join
+    assert_equal "two", File.read(File.join(@dir, "awh-manifest.plist"))
+    assert_equal 1, Dir.children(@dir).size
+  end
+
+  def test_pinned_upload_sets_no_cache
+    src = write_temp("m.plist", "<plist/>")
+
+    _, headers, = upload(src, "x", query: "?name=awh-manifest.plist")
+
+    assert_equal "no-cache", headers["cache-control"]
+  end
+
+  def test_pinned_name_cannot_escape_the_files_dir
+    src = write_temp("m.plist", "pwned")
+
+    status, _, body = upload(src, "x", query: "?name=../../etc/awh.plist")
+
+    assert_equal 200, status
+    assert_equal "http://files.example/files/awh.plist", body.join
+    assert_path_exists File.join(@dir, "awh.plist")
+  end
+
+  def test_unpinned_upload_still_gets_a_uuid_prefix
+    src = write_temp("a.txt", "hello")
+
+    _, headers, body = upload(src, "a.txt")
+
+    name = body.join.split("/files/").last
+    assert_match(/\A[0-9a-f-]{36}-a\.txt\z/, name)
+    assert_nil headers["cache-control"]
+  end
+
+  def test_a_blank_name_falls_back_to_the_uuid_prefix
+    src = write_temp("a.txt", "hello")
+
+    _, _, body = upload(src, "a.txt", query: "?name=")
+
+    name = body.join.split("/files/").last
+    assert_match(/\A[0-9a-f-]{36}-a\.txt\z/, name)
+  end
 end

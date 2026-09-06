@@ -43,7 +43,8 @@ class FileToS3App
     uploaded = extract_uploaded_file(req)
     return uploaded unless uploaded.is_a?(Hash)
 
-    filename = build_local_filename(uploaded[:filename])
+    pinned = pinned_name(req)
+    filename = pinned || build_local_filename(uploaded[:filename])
     FileUtils.mkdir_p(files_dir)
 
     uploaded[:tempfile].rewind
@@ -51,7 +52,11 @@ class FileToS3App
       IO.copy_stream(uploaded[:tempfile], file)
     end
 
-    text_response(200, file_url(req, filename))
+    # A pinned file is overwritten in place, so its URL is stable and every
+    # cache in front of it — Cloudflare especially — must revalidate rather
+    # than serve the previous release.
+    headers = pinned ? { "cache-control" => "no-cache" } : {}
+    text_response(200, file_url(req, filename), headers)
   end
 
   def handle_receive(req)
@@ -93,6 +98,16 @@ class FileToS3App
     "#{SecureRandom.uuid}-#{filename}"
   end
 
+  # ?name=awh-manifest.plist stores the upload under exactly that name,
+  # overwriting any previous one, so the URL never changes. Runs through the
+  # same sanitizer as an uploaded filename, so it cannot escape files_dir.
+  def pinned_name(req)
+    requested = req.params["name"]
+    return nil if requested.to_s.strip.empty?
+
+    sanitize_filename(requested)
+  end
+
   def sanitize_filename(filename)
     return nil if filename.to_s.strip.empty?
 
@@ -105,8 +120,9 @@ class FileToS3App
     ENV.fetch("FILES_DIR") { File.join(__dir__, "files") }
   end
 
-  def text_response(status, body)
-    [status, { "content-type" => "text/plain; charset=utf-8" }, [body]]
+  def text_response(status, body, extra_headers = {})
+    headers = { "content-type" => "text/plain; charset=utf-8" }.merge(extra_headers)
+    [status, headers, [body]]
   end
 
   def unprocessable(message)
