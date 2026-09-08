@@ -154,4 +154,64 @@ class AppTest < Minitest::Test
     name = body.join.split("/files/").last
     assert_match(/\A[0-9a-f-]{36}-a\.txt\z/, name)
   end
+
+  # --- index ------------------------------------------------------------
+
+  def test_index_lists_every_file
+    stored("a.txt", "one")
+    stored("b.txt", "two")
+
+    status, headers, body = get("/index")
+    html = body.join
+
+    assert_equal 200, status
+    assert_includes headers["content-type"], "text/html"
+    assert_includes html, "a.txt"
+    assert_includes html, "b.txt"
+  end
+
+  def test_index_links_to_each_file
+    stored("a b.txt", "one")
+
+    _, _, body = get("/index")
+
+    assert_includes body.join, "/files/a%20b.txt"
+  end
+
+  def test_index_escapes_html_in_filenames
+    stored("a_script_.txt", "one")
+    File.rename(File.join(@dir, "a_script_.txt"), File.join(@dir, "a<b>.txt"))
+
+    _, _, body = get("/index")
+    html = body.join
+
+    refute_includes html, "a<b>.txt"
+    assert_includes html, "a&lt;b&gt;.txt"
+  end
+
+  def test_index_is_mobile_friendly
+    stored("a.txt", "one")
+
+    _, _, body = get("/index")
+
+    assert_includes body.join, %(name="viewport")
+  end
+
+  def test_index_orders_newest_first
+    stored("old.txt", "one")
+    stored("new.txt", "two")
+    File.utime(Time.now - 3600, Time.now - 3600, File.join(@dir, "old.txt"))
+
+    _, _, body = get("/index")
+    html = body.join
+
+    assert_operator html.index("new.txt"), :<, html.index("old.txt")
+  end
+
+  def test_index_on_an_empty_dir_still_renders
+    status, _, body = get("/index")
+
+    assert_equal 200, status
+    assert_includes body.join, "No files"
+  end
 end
